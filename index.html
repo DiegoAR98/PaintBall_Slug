@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PaintBall Slug</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            font-family: 'Courier New', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: white;
+        }
+
+        .game-container {
+            background: rgba(0, 0, 0, 0.8);
+            border: 3px solid gold;
+            border-radius: 10px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        h1 {
+            color: #FFD700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            color: #FFA500;
+            margin-bottom: 20px;
+            font-style: italic;
+        }
+
+        canvas {
+            border: 2px solid #FFD700;
+            background: linear-gradient(180deg, #87CEEB 0%, #98FB98 100%);
+            display: block;
+            margin: 20px auto;
+        }
+
+        .controls {
+            margin: 20px 0;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+            text-align: left;
+            max-width: 800px;
+        }
+
+        .controls h3 {
+            color: #FFD700;
+            margin-top: 0;
+            text-align: center;
+        }
+
+        .control-row {
+            display: flex;
+            justify-content: space-between;
+            margin: 8px 0;
+        }
+
+        .key {
+            background: #333;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-family: monospace;
+            font-weight: bold;
+        }
+
+        .ui-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 20px;
+            border-radius: 8px;
+            margin: 10px 0;
+            font-size: 18px;
+            font-weight: bold;
+        }
+
+        .health {
+            color: #FF6B6B;
+        }
+
+        .timer {
+            color: #4ECDC4;
+        }
+
+        .floor {
+            color: #FFD93D;
+        }
+
+        .hearts {
+            display: inline-block;
+        }
+
+        .heart {
+            color: #FF1744;
+            margin: 0 2px;
+            font-size: 20px;
+        }
+
+        .game-over {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(139, 0, 0, 0.95);
+            padding: 40px;
+            border-radius: 15px;
+            border: 3px solid #FF6B6B;
+            text-align: center;
+            font-size: 24px;
+            display: none;
+        }
+
+        .game-win {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 100, 0, 0.95);
+            padding: 40px;
+            border-radius: 15px;
+            border: 3px solid #4ECDC4;
+            text-align: center;
+            font-size: 24px;
+            display: none;
+        }
+
+        button {
+            background: #FFD700;
+            color: #1e3c72;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+
+        button:hover {
+            background: #FFA500;
+            transform: translateY(-2px);
+        }
+
+        .footer {
+            margin-top: 20px;
+            font-size: 12px;
+            color: #AAA;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1>⚔️ Prince of Run ⚔️</h1>
+        <p class="subtitle">A cheap copy of Metal Slug</p>
+
+        <div class="ui-bar">
+            <div class="health">
+                <span>Health: </span>
+                <span class="hearts" id="hearts">❤️❤️❤️❤️❤️</span>
+            </div>
+            <div class="timer">
+                <span>Time: </span>
+                <span id="timer">05:00</span>
+            </div>
+            <div class="floor">
+                <span>Floor: </span>
+                <span id="floor">1</span>
+            </div>
+            <div class="score" style="color: #FFD700;">
+                <span>Score: </span>
+                <span id="score">0</span>
+            </div>
+            <div class="ammo" style="color: #FFA500;">
+                <span>Ammo: </span>
+                <span id="ammo">20/20</span>
+            </div>
+        </div>
+
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+        <div class="controls">
+            <h3>🎮 CONTROLS</h3>
+            <div class="control-row">
+                <span><span class="key">A/D</span> or <span class="key">←/→</span> Move</span>
+                <span><span class="key">W</span> or <span class="key">↑</span> Jump</span>
+                <span><span class="key">S</span> or <span class="key">↓</span> Crouch</span>
+            </div>
+            <div class="control-row">
+                <span><span class="key">SPACE</span> Roll "Do not have any use yet"</span>
+                <span><span class="key">X</span> or <span class="key">CLICK</span> Shoot</span>
+                <span><span class="key">R</span> Restart Game</span>
+            </div>
+        </div>
+
+        <div class="game-over" id="gameOver">
+            <h2>⚰️ DEFEATED ⚰️</h2>
+            <p id="gameOverReason">Time ran out!</p>
+            <button onclick="restartGame()">Try Again</button>
+        </div>
+
+        <div class="game-win" id="gameWin">
+            <h2>🏆 VICTORY! 🏆</h2>
+            <p>You escaped the dungeon!</p>
+            <p id="completionTime">Time Remaining: 02:34</p>
+            <button onclick="restartGame()">Play Again</button>
+        </div>
+
+        <div class="footer">
+            <p>🎯 Level 1: Solve the red plate puzzle to reach Level 2!</p>
+            <p>🎯 Level 2: Master both blue AND green plates to win!</p>
+            <p>Based on the Unity game design.</p>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+</body>
+</html>
