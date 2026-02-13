@@ -23,6 +23,7 @@
             border-radius: 10px;
             padding: 20px;
             text-align: center;
+            position: relative;
         }
 
         h1 {
@@ -82,58 +83,59 @@
             padding: 10px 20px;
             border-radius: 8px;
             margin: 10px 0;
-            font-size: 18px;
+            font-size: 16px;
             font-weight: bold;
+            flex-wrap: wrap;
+            gap: 8px;
         }
 
-        .health {
-            color: #FF6B6B;
-        }
+        .health { color: #FF6B6B; }
+        .timer { color: #4ECDC4; }
+        .floor { color: #FFD93D; }
+        .hearts { display: inline-block; }
+        .heart { color: #FF1744; margin: 0 2px; font-size: 20px; }
 
-        .timer {
-            color: #4ECDC4;
-        }
-
-        .floor {
-            color: #FFD93D;
-        }
-
-        .hearts {
-            display: inline-block;
-        }
-
-        .heart {
-            color: #FF1744;
-            margin: 0 2px;
+        /* Overlays */
+        .overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 40px;
+            border-radius: 15px;
+            text-align: center;
             font-size: 20px;
+            display: none;
+            z-index: 100;
+            max-height: 80vh;
+            overflow-y: auto;
         }
 
         .game-over {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
             background: rgba(139, 0, 0, 0.95);
-            padding: 40px;
-            border-radius: 15px;
             border: 3px solid #FF6B6B;
-            text-align: center;
-            font-size: 24px;
-            display: none;
         }
 
         .game-win {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
             background: rgba(0, 100, 0, 0.95);
-            padding: 40px;
-            border-radius: 15px;
             border: 3px solid #4ECDC4;
-            text-align: center;
-            font-size: 24px;
-            display: none;
+        }
+
+        .start-screen {
+            background: rgba(20, 30, 60, 0.97);
+            border: 3px solid #FFD700;
+            min-width: 400px;
+        }
+
+        .shop-overlay {
+            background: rgba(30, 20, 50, 0.97);
+            border: 3px solid #FFD700;
+            min-width: 400px;
+        }
+
+        .pause-overlay {
+            background: rgba(0, 0, 0, 0.9);
+            border: 3px solid #4ECDC4;
         }
 
         button {
@@ -145,13 +147,176 @@
             font-size: 16px;
             font-weight: bold;
             cursor: pointer;
-            margin: 10px 5px;
+            margin: 5px;
+            font-family: 'Courier New', monospace;
         }
 
         button:hover {
             background: #FFA500;
             transform: translateY(-2px);
         }
+
+        button:disabled {
+            background: #666;
+            color: #999;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .difficulty-btn {
+            display: block;
+            width: 100%;
+            margin: 8px 0;
+            padding: 12px;
+        }
+
+        .difficulty-btn.easy { background: #4CAF50; color: white; }
+        .difficulty-btn.easy:hover { background: #66BB6A; }
+        .difficulty-btn.normal { background: #2196F3; color: white; }
+        .difficulty-btn.normal:hover { background: #42A5F5; }
+        .difficulty-btn.hard { background: #FF9800; color: white; }
+        .difficulty-btn.hard:hover { background: #FFA726; }
+        .difficulty-btn.challenge { background: #F44336; color: white; }
+        .difficulty-btn.challenge:hover { background: #EF5350; }
+
+        .shop-item {
+            background: rgba(255,255,255,0.1);
+            border: 2px solid #555;
+            border-radius: 8px;
+            padding: 12px;
+            margin: 8px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            text-align: left;
+        }
+
+        .shop-item.owned { border-color: #4CAF50; opacity: 0.7; }
+
+        .shop-item-info { flex: 1; }
+        .shop-item-name { color: #FFD700; font-weight: bold; }
+        .shop-item-desc { color: #AAA; font-size: 14px; }
+        .shop-item-price { color: #FFA500; font-size: 18px; font-weight: bold; }
+
+        /* Boss health bar */
+        .boss-health-container {
+            position: absolute;
+            top: 90px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 400px;
+            display: none;
+            z-index: 50;
+        }
+
+        .boss-name {
+            color: #FF4444;
+            font-size: 16px;
+            font-weight: bold;
+            text-align: center;
+            margin-bottom: 4px;
+            text-shadow: 1px 1px 2px black;
+        }
+
+        .boss-health-bar {
+            width: 100%;
+            height: 16px;
+            background: #333;
+            border: 2px solid #FF4444;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .boss-health-fill {
+            height: 100%;
+            background: linear-gradient(to right, #FF0000, #FF4444);
+            transition: width 0.3s;
+        }
+
+        /* Combo display */
+        .combo-display {
+            position: absolute;
+            top: 120px;
+            right: 40px;
+            font-size: 24px;
+            font-weight: bold;
+            color: #FFD700;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+            display: none;
+            z-index: 50;
+        }
+
+        /* Damage vignette */
+        .damage-vignette {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            z-index: 40;
+            box-shadow: inset 0 0 80px rgba(255, 0, 0, 0);
+            transition: box-shadow 0.3s;
+            border-radius: 10px;
+        }
+
+        .damage-vignette.active {
+            box-shadow: inset 0 0 80px rgba(255, 0, 0, 0.5);
+        }
+
+        .damage-vignette.critical {
+            box-shadow: inset 0 0 120px rgba(255, 0, 0, 0.7);
+            animation: pulse-vignette 0.5s infinite alternate;
+        }
+
+        @keyframes pulse-vignette {
+            from { box-shadow: inset 0 0 80px rgba(255, 0, 0, 0.5); }
+            to { box-shadow: inset 0 0 120px rgba(255, 0, 0, 0.8); }
+        }
+
+        /* Tutorial toast */
+        .tutorial-container {
+            position: absolute;
+            bottom: 180px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 60;
+        }
+
+        .tutorial-toast {
+            background: rgba(0, 0, 0, 0.85);
+            border: 2px solid #FFD700;
+            border-radius: 8px;
+            padding: 10px 20px;
+            margin: 5px 0;
+            color: #FFD700;
+            font-size: 16px;
+            animation: toast-in 0.3s ease-out;
+            white-space: nowrap;
+        }
+
+        @keyframes toast-in {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Medal styles */
+        .medal { font-size: 28px; margin: 0 5px; }
+        .medal-gold { color: #FFD700; }
+        .medal-silver { color: #C0C0C0; }
+        .medal-bronze { color: #CD7F32; }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin: 15px 0;
+            text-align: left;
+            font-size: 16px;
+        }
+
+        .stats-grid span:nth-child(odd) { color: #AAA; }
+        .stats-grid span:nth-child(even) { color: #FFD700; text-align: right; }
 
         .footer {
             margin-top: 20px;
@@ -162,13 +327,13 @@
 </head>
 <body>
     <div class="game-container">
-        <h1>⚔️ PaintBall Slug ⚔️</h1>
+        <h1>PaintBall Slug</h1>
         <p class="subtitle">A cheap copy of Metal Slug</p>
 
         <div class="ui-bar">
             <div class="health">
-                <span>Health: </span>
-                <span class="hearts" id="hearts">❤️❤️❤️❤️❤️</span>
+                <span>HP: </span>
+                <span class="hearts" id="hearts"></span>
             </div>
             <div class="timer">
                 <span>Time: </span>
@@ -186,41 +351,104 @@
                 <span>Ammo: </span>
                 <span id="ammo">20/20</span>
             </div>
+            <div class="lives" style="color: #90EE90;">
+                <span>Lives: </span>
+                <span id="lives">7</span>
+            </div>
+            <div style="color: #E040FB;">
+                <span>Gems: </span>
+                <span id="gems">0/15</span>
+            </div>
+            <div id="difficultyBadge" style="color: #4ECDC4; font-size:12px;"></div>
         </div>
 
-        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div style="position:relative; display:inline-block;">
+            <canvas id="gameCanvas" width="800" height="600"></canvas>
+            <div class="damage-vignette" id="damageVignette"></div>
+            <div class="boss-health-container" id="bossHealthContainer">
+                <div class="boss-name" id="bossName">ORC WARCHIEF</div>
+                <div class="boss-health-bar">
+                    <div class="boss-health-fill" id="bossHealthFill" style="width:100%"></div>
+                </div>
+            </div>
+            <div class="combo-display" id="comboDisplay"></div>
+            <div class="tutorial-container" id="tutorialContainer"></div>
+        </div>
 
         <div class="controls">
-            <h3>🎮 CONTROLS</h3>
+            <h3>CONTROLS</h3>
             <div class="control-row">
-                <span><span class="key">A/D</span> or <span class="key">←/→</span> Move</span>
-                <span><span class="key">W</span> or <span class="key">↑</span> Jump</span>
-                <span><span class="key">S</span> or <span class="key">↓</span> Crouch</span>
+                <span><span class="key">A/D</span> or <span class="key">Arrows</span> Move</span>
+                <span><span class="key">W</span> or <span class="key">Up</span> Jump</span>
+                <span><span class="key">S</span> or <span class="key">Down</span> Crouch</span>
             </div>
             <div class="control-row">
-                <span><span class="key">SPACE</span> Roll "Do not have any use yet"</span>
+                <span><span class="key">SPACE</span> Roll / Dodge</span>
                 <span><span class="key">X</span> or <span class="key">CLICK</span> Shoot</span>
+                <span><span class="key">ESC</span> Pause</span>
+            </div>
+            <div class="control-row">
+                <span><span class="key">M</span> Toggle Music</span>
                 <span><span class="key">R</span> Restart Game</span>
+                <span></span>
             </div>
         </div>
 
-        <div class="game-over" id="gameOver">
-            <h2>⚰️ DEFEATED ⚰️</h2>
-            <p id="gameOverReason">Time ran out!</p>
-            <button onclick="restartGame()">Try Again</button>
+        <!-- Start Screen -->
+        <div class="overlay start-screen" id="startScreen">
+            <h2 style="color:#FFD700; margin-top:0;">PaintBall Slug</h2>
+            <p style="color:#FFA500;">Choose your difficulty:</p>
+            <button class="difficulty-btn easy" onclick="startGame('easy')">EASY - Casual fun</button>
+            <button class="difficulty-btn normal" onclick="startGame('normal')">NORMAL - Balanced challenge</button>
+            <button class="difficulty-btn hard" onclick="startGame('hard')">HARD - For veterans</button>
+            <button class="difficulty-btn challenge" onclick="startGame('challenge')">CHALLENGE - Permadeath!</button>
+            <hr style="border-color:#555; margin:15px 0;">
+            <button onclick="openShopFromMenu()">Shop</button>
+            <p id="totalScoreDisplay" style="color:#FFD700; font-size:14px;"></p>
         </div>
 
-        <div class="game-win" id="gameWin">
-            <h2>🏆 VICTORY! 🏆</h2>
+        <!-- Shop Overlay -->
+        <div class="overlay shop-overlay" id="shopOverlay">
+            <h2 style="color:#FFD700; margin-top:0;">UPGRADE SHOP</h2>
+            <p style="color:#FFA500;">Score: <span id="shopScore">0</span></p>
+            <div id="shopItems"></div>
+            <hr style="border-color:#555; margin:15px 0;">
+            <button onclick="closeShop()">Back</button>
+        </div>
+
+        <!-- Pause Overlay -->
+        <div class="overlay pause-overlay" id="pauseOverlay">
+            <h2 style="color:#4ECDC4; margin-top:0;">PAUSED</h2>
+            <p>Press <span class="key">ESC</span> to resume</p>
+            <hr style="border-color:#555; margin:15px 0;">
+            <button onclick="game.togglePause()">Resume</button>
+            <button onclick="openShopFromPause()">Shop</button>
+        </div>
+
+        <!-- Game Over -->
+        <div class="overlay game-over" id="gameOver">
+            <h2>DEFEATED</h2>
+            <p id="gameOverReason">Time ran out!</p>
+            <p style="color:#FFA500;">Score earned: <span id="gameOverScore">0</span></p>
+            <button onclick="restartGame()">Try Again</button>
+            <button onclick="openShopFromGameOver()">Shop</button>
+        </div>
+
+        <!-- Game Win -->
+        <div class="overlay game-win" id="gameWin">
+            <h2>VICTORY!</h2>
             <p>You escaped the dungeon!</p>
             <p id="completionTime">Time Remaining: 02:34</p>
+            <div class="stats-grid" id="winStats"></div>
+            <div id="medalDisplay"></div>
+            <p style="color:#FFA500;">Score earned: <span id="winScore">0</span></p>
             <button onclick="restartGame()">Play Again</button>
+            <button onclick="openShopFromWin()">Shop</button>
         </div>
 
         <div class="footer">
-            <p>🎯 Level 1: Solve the red plate puzzle to reach Level 2!</p>
-            <p>🎯 Level 2: Master both blue AND green plates to win!</p>
-            <p>🎯 Level 3: You're a Genius!</p>
+            <p>Levels 1-4: Solve puzzles and defeat enemies! | Level 5: Boss Battle!</p>
+            <p>Collect gems, find hidden upgrades, and master the combo system!</p>
         </div>
     </div>
 

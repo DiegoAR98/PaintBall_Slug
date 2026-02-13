@@ -18,10 +18,15 @@ class Game {
 
         // Level management
         this.currentLevel = 1;
-        this.maxLevel = 3;
+        this.maxLevel = 5; // Updated to include levels 4 and 5
+
+        // Life management system
+        this.livesPerLevel = 3;
+        this.currentLives = this.livesPerLevel;
+        this.lastCheckpointPosition = {x: 100, y: 400};
 
         // Initialize game objects
-        this.player = new Player(100, 400);
+        this.player = new Player(100, 400, this);
         this.platforms = [];
         this.traps = [];
         this.gates = [];
@@ -39,9 +44,164 @@ class Game {
         this.shootCooldown = 0;
         this.maxShootCooldown = 0.3;
 
+        // Audio system
+        this.audioContext = null;
+        this.sounds = {};
+        this.initAudio();
+
         this.createLevel(this.currentLevel);
         this.setupEventListeners();
         this.gameLoop();
+    }
+
+    renderAtmosphericParticles() {
+        // Add floating atmospheric particles
+        const time = Date.now() / 1000;
+
+        for (let i = 0; i < 20; i++) {
+            const x = (time * 10 + i * 40) % (this.width + 20) - 10;
+            const y = 50 + Math.sin(time + i) * 30;
+            const alpha = 0.1 + Math.sin(time * 2 + i) * 0.05;
+
+            this.ctx.globalAlpha = alpha;
+            this.ctx.fillStyle = this.currentLevel <= 2 ? '#FFFFFF' : '#FFD700';
+            this.ctx.fillRect(x, y, 2, 2);
+        }
+
+        this.ctx.globalAlpha = 1;
+    }
+
+    renderShadows() {
+        this.ctx.globalAlpha = 0.3;
+        this.ctx.fillStyle = '#000000';
+
+        // Player shadow
+        const groundY = this.height - 40;
+        this.ctx.fillRect(this.player.x + 2, groundY, this.player.width - 4, 6);
+
+        // Enemy shadows
+        this.enemies.forEach(enemy => {
+            this.ctx.fillRect(enemy.x + 2, groundY, enemy.width - 4, 4);
+        });
+
+        this.ctx.globalAlpha = 1;
+    }
+
+    handlePlayerDeath() {
+        this.currentLives--;
+
+        if (this.currentLives > 0) {
+            // Respawn at last checkpoint
+            this.player.x = this.lastCheckpointPosition.x;
+            this.player.y = this.lastCheckpointPosition.y;
+            this.player.vx = 0;
+            this.player.vy = 0;
+            this.player.health = this.player.maxHealth; // Restore full health on respawn
+            this.player.invincible = false;
+            this.player.invincibleTime = 0;
+
+            // Show respawn message
+            this.showLevelMessage(`Lives remaining: ${this.currentLives}`);
+        } else {
+            // No lives left, restart from beginning of level
+            this.gameOver('Out of lives! Starting level from beginning...');
+            setTimeout(() => {
+                // Stay on same level - reset from beginning
+                this.createLevel(this.currentLevel);
+                this.player = new Player(100, 400, this);
+                this.gameState = 'playing';
+                document.getElementById('gameOver').style.display = 'none';
+            }, 2000);
+        }
+    }
+
+    initAudio() {
+        try {
+            this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        } catch (error) {
+            console.log('Audio not supported in this browser');
+            return;
+        }
+    }
+
+    playSound(type, frequency = 440, duration = 0.1, volume = 0.1) {
+        if (!this.audioContext) return;
+
+        const oscillator = this.audioContext.createOscillator();
+        const gainNode = this.audioContext.createGain();
+
+        oscillator.connect(gainNode);
+        gainNode.connect(this.audioContext.destination);
+
+        switch (type) {
+            case 'shoot':
+                oscillator.frequency.setValueAtTime(800, this.audioContext.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(200, this.audioContext.currentTime + 0.1);
+                gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + 0.1);
+                oscillator.type = 'square';
+                break;
+            case 'jump':
+                oscillator.frequency.setValueAtTime(200, this.audioContext.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(600, this.audioContext.currentTime + 0.2);
+                gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + 0.2);
+                oscillator.type = 'sine';
+                break;
+            case 'hit':
+                oscillator.frequency.setValueAtTime(150, this.audioContext.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(50, this.audioContext.currentTime + 0.1);
+                gainNode.gain.setValueAtTime(volume * 1.5, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + 0.1);
+                oscillator.type = 'sawtooth';
+                break;
+            case 'enemy_death':
+                oscillator.frequency.setValueAtTime(300, this.audioContext.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(50, this.audioContext.currentTime + 0.3);
+                gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + 0.3);
+                oscillator.type = 'square';
+                break;
+            case 'collect':
+                oscillator.frequency.setValueAtTime(400, this.audioContext.currentTime);
+                oscillator.frequency.exponentialRampToValueAtTime(800, this.audioContext.currentTime + 0.1);
+                gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + 0.1);
+                oscillator.type = 'sine';
+                break;
+            case 'checkpoint':
+                oscillator.frequency.setValueAtTime(500, this.audioContext.currentTime);
+                oscillator.frequency.setValueAtTime(750, this.audioContext.currentTime + 0.1);
+                oscillator.frequency.setValueAtTime(1000, this.audioContext.currentTime + 0.2);
+                gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + 0.3);
+                oscillator.type = 'triangle';
+                break;
+            case 'level_complete':
+                oscillator.frequency.setValueAtTime(400, this.audioContext.currentTime);
+                oscillator.frequency.setValueAtTime(500, this.audioContext.currentTime + 0.1);
+                oscillator.frequency.setValueAtTime(600, this.audioContext.currentTime + 0.2);
+                oscillator.frequency.setValueAtTime(800, this.audioContext.currentTime + 0.3);
+                gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + 0.5);
+                oscillator.type = 'triangle';
+                break;
+            case 'plate_activate':
+                oscillator.frequency.setValueAtTime(600, this.audioContext.currentTime);
+                oscillator.frequency.setValueAtTime(800, this.audioContext.currentTime + 0.05);
+                gainNode.gain.setValueAtTime(volume * 0.7, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + 0.1);
+                oscillator.type = 'sine';
+                break;
+            default:
+                oscillator.frequency.setValueAtTime(frequency, this.audioContext.currentTime);
+                gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + duration);
+                oscillator.type = 'sine';
+        }
+
+        oscillator.start(this.audioContext.currentTime);
+        oscillator.stop(this.audioContext.currentTime + (duration || 0.3));
     }
 
     createLevel(level) {
@@ -59,12 +219,20 @@ class Game {
         this.ammo = this.maxAmmo;
         this.shootCooldown = 0;
 
+        // Reset lives for new level
+        this.currentLives = this.livesPerLevel;
+        this.lastCheckpointPosition = {x: 100, y: 400};
+
         if (level === 1) {
             this.createLevel1();
         } else if (level === 2) {
             this.createLevel2();
         } else if (level === 3) {
             this.createLevel3();
+        } else if (level === 4) {
+            this.createLevel4();
+        } else if (level === 5) {
+            this.createLevel5();
         }
     }
 
@@ -102,9 +270,10 @@ class Game {
             new HealthPotion(120, 180),
         ];
 
-        // Create checkpoints
+        // Create checkpoints (including mid-level checkpoints)
         this.checkpoints = [
             new Checkpoint(50, this.height - 80, 1),
+            new Checkpoint(320, 260, 'mid1'), // Mid-level checkpoint
             new Checkpoint(720, 130, 'next'), // Level transition checkpoint
         ];
 
@@ -156,9 +325,11 @@ class Game {
             new HealthPotion(680, 80),
         ];
 
-        // Checkpoints
+        // Checkpoints (including mid-level checkpoints)
         this.checkpoints = [
             new Checkpoint(50, this.height - 80, 2),
+            new Checkpoint(320, 160, 'mid2'), // Mid-level checkpoint
+            new Checkpoint(520, 110, 'mid3'), // Another checkpoint
             new Checkpoint(720, 60, 'next'), // Go to Level 3
         ];
 
@@ -187,14 +358,14 @@ class Game {
             new Platform(600, 100, 150, 20),
         ];
 
-        // Many challenging traps
+        // Moderately challenging traps (made easier)
         this.traps = [
-            new SpikeTrap(120, 480, 1500, 600),
-            new SpikeTrap(270, 430, 2000, 700),
-            new SpikeTrap(570, 330, 1800, 650),
-            new SlicerTrap(170, 280, 2500, 500),
-            new SlicerTrap(370, 230, 3000, 600),
-            new SlicerTrap(520, 180, 2200, 550),
+            new SpikeTrap(120, 480, 2500, 800), // Longer cycle, shorter active time
+            new SpikeTrap(270, 430, 3000, 900),
+            new SpikeTrap(570, 330, 2800, 700),
+            new SlicerTrap(170, 280, 3500, 600), // Longer cycle, shorter active time
+            new SlicerTrap(370, 230, 4000, 700),
+            new SlicerTrap(520, 180, 3500, 650),
         ];
 
         // Final puzzle - three plates
@@ -210,15 +381,18 @@ class Game {
             new Gate(750, 50, 50, 'green'), // Final exit
         ];
 
-        // Minimal potions - high difficulty
+        // More potions to make it easier
         this.potions = [
             new HealthPotion(420, 380),
+            new HealthPotion(200, 130), // Added extra health potion
         ];
 
-        // Final checkpoint
+        // Final checkpoints (including mid-level checkpoints)
         this.checkpoints = [
             new Checkpoint(50, this.height - 80, 3),
-            new Checkpoint(770, 80, 'win'), // Win the game
+            new Checkpoint(170, 280, 'mid4'), // Mid-level checkpoint
+            new Checkpoint(350, 230, 'mid5'), // Another checkpoint
+            new Checkpoint(770, 80, 'next'), // Go to Level 4
         ];
 
         // Challenging enemies for final level
@@ -230,6 +404,145 @@ class Game {
             new BasicGuard(230, 130), // Guard the second plate
             new PatrolEnemy(350, 230, 300, 440), // Mid-level patrol
             new ChaseEnemy(200, 130, 100), // Final area chaser
+        ];
+    }
+
+    createLevel4() {
+        // Advanced level with moving platforms and complex traps
+        this.platforms = [
+            new Platform(0, this.height - 40, this.width, 40), // Ground
+            new Platform(80, 520, 60, 20),
+            new Platform(200, 460, 50, 20),
+            new Platform(320, 400, 60, 20),
+            new Platform(460, 350, 50, 20),
+            new Platform(580, 300, 70, 20),
+            new Platform(120, 250, 50, 20),
+            new Platform(300, 200, 60, 20),
+            new Platform(500, 150, 50, 20),
+            new Platform(650, 100, 130, 20),
+        ];
+
+        // Intense trap layout
+        this.traps = [
+            new SpikeTrap(100, 500, 1200, 500),
+            new SpikeTrap(220, 440, 1400, 600),
+            new SpikeTrap(480, 330, 1300, 550),
+            new SlicerTrap(140, 230, 2000, 400),
+            new SlicerTrap(320, 180, 2200, 450),
+            new SlicerTrap(520, 130, 1800, 400),
+            new SpikeTrap(600, 280, 1500, 650),
+        ];
+
+        // Complex multi-color puzzle
+        this.plates = [
+            new PressurePlate(140, 230, 'red'),
+            new PressurePlate(320, 180, 'blue'),
+            new PressurePlate(520, 130, 'green'),
+            new PressurePlate(680, 80, 'red'), // Second red plate
+        ];
+
+        this.gates = [
+            new Gate(600, 50, 40, 'red'),
+            new Gate(650, 50, 40, 'blue'),
+            new Gate(700, 50, 40, 'green'),
+            new Gate(750, 50, 40, 'red'), // Final gate
+        ];
+
+        // Sparse potions for high difficulty
+        this.potions = [
+            new HealthPotion(340, 380),
+            new HealthPotion(680, 80),
+        ];
+
+        // Checkpoints
+        this.checkpoints = [
+            new Checkpoint(50, this.height - 80, 4),
+            new Checkpoint(140, 210, 'mid6'), // Mid-level checkpoint
+            new Checkpoint(520, 110, 'mid7'), // Another checkpoint
+            new Checkpoint(770, 80, 'next'), // Go to Level 5
+        ];
+
+        // High-level enemies
+        this.enemies = [
+            new PatrolEnemy(100, 500, 80, 140), // Ground patrol
+            new PatrolEnemy(220, 440, 200, 270), // Platform patrol
+            new ChaseEnemy(480, 330, 100), // Aggressive chaser
+            new BasicGuard(140, 210), // Guard the first plate
+            new PatrolEnemy(300, 180, 250, 360), // Mid-level patrol
+            new ChaseEnemy(520, 110, 80), // Final area chaser
+            new BasicGuard(680, 60), // Final guard
+            new PatrolEnemy(650, 80, 600, 700), // Final patrol
+        ];
+    }
+
+    createLevel5() {
+        // Final boss-like level with extreme difficulty
+        this.platforms = [
+            new Platform(0, this.height - 40, this.width, 40), // Ground
+            new Platform(60, 540, 40, 20),
+            new Platform(160, 480, 40, 20),
+            new Platform(280, 420, 50, 20),
+            new Platform(400, 360, 40, 20),
+            new Platform(540, 300, 50, 20),
+            new Platform(120, 240, 40, 20),
+            new Platform(280, 180, 50, 20),
+            new Platform(450, 120, 40, 20),
+            new Platform(600, 80, 40, 20),
+            new Platform(680, 40, 100, 20), // Final platform
+        ];
+
+        // Maximum difficulty traps
+        this.traps = [
+            new SpikeTrap(80, 520, 1000, 400),
+            new SpikeTrap(180, 460, 1100, 450),
+            new SpikeTrap(300, 400, 1200, 500),
+            new SpikeTrap(560, 280, 1000, 400),
+            new SlicerTrap(140, 220, 1500, 300),
+            new SlicerTrap(300, 160, 1600, 350),
+            new SlicerTrap(470, 100, 1400, 300),
+            new SpikeTrap(420, 340, 1300, 550),
+            new SpikeTrap(140, 220, 1800, 700),
+        ];
+
+        // Final complex puzzle requiring all colors
+        this.plates = [
+            new PressurePlate(140, 220, 'red'),
+            new PressurePlate(300, 160, 'blue'),
+            new PressurePlate(470, 100, 'green'),
+            new PressurePlate(620, 60, 'red'), // Multi-activation required
+            new PressurePlate(700, 20, 'blue'), // Final plate
+        ];
+
+        this.gates = [
+            new Gate(720, 20, 20, 'red'),
+            new Gate(740, 20, 20, 'blue'),
+            new Gate(760, 20, 20, 'green'),
+        ];
+
+        // Single health potion - ultimate challenge
+        this.potions = [
+            new HealthPotion(300, 140),
+        ];
+
+        // Final checkpoints
+        this.checkpoints = [
+            new Checkpoint(50, this.height - 80, 5),
+            new Checkpoint(280, 140, 'mid8'), // Mid-level checkpoint
+            new Checkpoint(770, 20, 'win'), // Win the game
+        ];
+
+        // Boss-level enemy arrangement
+        this.enemies = [
+            new PatrolEnemy(80, 520, 60, 100), // Ground patrol
+            new ChaseEnemy(180, 460, 80), // Aggressive chaser
+            new PatrolEnemy(300, 400, 280, 330), // Platform patrol
+            new BasicGuard(140, 200), // Guard the first plate
+            new ChaseEnemy(420, 340, 100), // Mid-level chaser
+            new PatrolEnemy(280, 160, 230, 330), // Puzzle guard patrol
+            new BasicGuard(470, 80), // Puzzle guard
+            new ChaseEnemy(560, 260, 120), // Final area chaser
+            new BasicGuard(620, 40), // Final approach guard
+            new PatrolEnemy(680, 20, 650, 730), // Final boss patrol
         ];
     }
 
@@ -287,8 +600,9 @@ class Game {
                 this.ammo--;
                 this.shootCooldown = this.maxShootCooldown;
 
-                // Muzzle flash effect
+                // Muzzle flash effect and sound
                 this.addParticles(playerCenterX, playerCenterY, '#FFD700', 3);
+                this.playSound('shoot');
             }
         }
     }
@@ -373,12 +687,16 @@ class Game {
         this.traps.forEach(trap => {
             if (trap.isActive && this.player.collidesWith(trap)) {
                 this.player.takeDamage();
+                this.playSound('hit');
             }
         });
 
         // Pressure plate collisions
         this.plates.forEach(plate => {
             if (this.player.collidesWith(plate)) {
+                if (!plate.isPressed) {
+                    this.playSound('plate_activate');
+                }
                 plate.activate();
             } else {
                 plate.deactivate();
@@ -409,20 +727,23 @@ class Game {
             }
         });
 
-        // Potion collisions
-        this.potions.forEach((potion, index) => {
+        // Potion collisions (use filter to avoid mutation during iteration)
+        this.potions = this.potions.filter(potion => {
             if (potion.active && this.player.collidesWith(potion)) {
                 potion.collect();
                 this.player.heal();
-                this.potions.splice(index, 1);
                 this.addParticles(potion.x, potion.y, '#4ECDC4', 8);
+                this.playSound('collect');
+                return false;
             }
+            return true;
         });
 
         // Player-Enemy collisions
         this.enemies.forEach(enemy => {
             if (this.player.collidesWith(enemy) && !enemy.isDying) {
                 this.player.takeDamage();
+                this.playSound('hit');
                 // Knock player back
                 const pushDirection = this.player.x < enemy.x ? -1 : 1;
                 this.player.vx += pushDirection * 200;
@@ -451,6 +772,7 @@ class Game {
                         enemy.isDying = true;
                         this.playerScore += 50;
                         this.addParticles(enemy.x + enemy.width/2, enemy.y + enemy.height/2, '#FFD700', 10);
+                        this.playSound('enemy_death');
                     }
                 }
             });
@@ -461,10 +783,16 @@ class Game {
             if (this.player.collidesWith(checkpoint)) {
                 if (checkpoint.floor === 'next' && !checkpoint.activated) {
                     // Advance to next level
+                    this.playSound('level_complete');
                     this.advanceLevel();
                 } else if (checkpoint.floor === 'win' && !checkpoint.activated) {
                     // Win condition
+                    this.playSound('level_complete');
                     this.gameWin();
+                } else if (!checkpoint.activated) {
+                    this.playSound('checkpoint');
+                    // Save checkpoint position
+                    this.lastCheckpointPosition = {x: checkpoint.x + checkpoint.width/2, y: checkpoint.y};
                 }
                 checkpoint.activate();
             }
@@ -478,25 +806,57 @@ class Game {
     }
 
     render() {
-        // Clear canvas
-        this.ctx.fillStyle = 'linear-gradient(180deg, #87CEEB 0%, #98FB98 100%)';
+        // Enhanced background with parallax effect
+        const skyGradient = this.ctx.createLinearGradient(0, 0, 0, this.height);
+
+        // Dynamic sky colors based on level
+        if (this.currentLevel <= 2) {
+            skyGradient.addColorStop(0, '#87CEEB'); // Sky blue
+            skyGradient.addColorStop(0.6, '#DDA0DD'); // Plum
+            skyGradient.addColorStop(1, '#98FB98'); // Pale green
+        } else if (this.currentLevel === 3) {
+            skyGradient.addColorStop(0, '#4B0082'); // Indigo
+            skyGradient.addColorStop(0.6, '#8A2BE2'); // Blue violet
+            skyGradient.addColorStop(1, '#2F4F4F'); // Dark slate gray
+        } else {
+            skyGradient.addColorStop(0, '#2F1B14'); // Dark brown
+            skyGradient.addColorStop(0.6, '#8B0000'); // Dark red
+            skyGradient.addColorStop(1, '#1C1C1C'); // Very dark gray
+        }
+
+        this.ctx.fillStyle = skyGradient;
         this.ctx.fillRect(0, 0, this.width, this.height);
 
-        // Draw sky gradient
-        const gradient = this.ctx.createLinearGradient(0, 0, 0, this.height);
-        gradient.addColorStop(0, '#87CEEB');
-        gradient.addColorStop(1, '#98FB98');
-        this.ctx.fillStyle = gradient;
-        this.ctx.fillRect(0, 0, this.width, this.height);
+        // Add floating particles for atmosphere
+        this.renderAtmosphericParticles();
 
-        // Draw platforms
-        this.ctx.fillStyle = '#8B4513';
+        // Draw enhanced platforms with texture and shading
         this.platforms.forEach(platform => {
-            this.ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
-            // Add texture
-            this.ctx.fillStyle = '#A0522D';
-            this.ctx.fillRect(platform.x, platform.y, platform.width, 5);
+            // Platform base
             this.ctx.fillStyle = '#8B4513';
+            this.ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+
+            // Top surface with gradient
+            const platformGradient = this.ctx.createLinearGradient(0, platform.y, 0, platform.y + platform.height);
+            platformGradient.addColorStop(0, '#D2B48C');
+            platformGradient.addColorStop(0.3, '#A0522D');
+            platformGradient.addColorStop(1, '#654321');
+            this.ctx.fillStyle = platformGradient;
+            this.ctx.fillRect(platform.x, platform.y, platform.width, platform.height);
+
+            // Stone texture effect
+            for (let i = 0; i < platform.width; i += 8) {
+                for (let j = 0; j < platform.height; j += 8) {
+                    if (Math.random() > 0.7) {
+                        this.ctx.fillStyle = 'rgba(139, 69, 19, 0.3)';
+                        this.ctx.fillRect(platform.x + i, platform.y + j, 4, 4);
+                    }
+                }
+            }
+
+            // Platform edge highlight
+            this.ctx.fillStyle = '#F4A460';
+            this.ctx.fillRect(platform.x, platform.y, platform.width, 2);
         });
 
         // Draw gates
@@ -522,6 +882,9 @@ class Game {
 
         // Draw particles
         this.particles.forEach(particle => particle.render(this.ctx));
+
+        // Draw shadows for depth
+        this.renderShadows();
 
         // Draw player
         this.player.render(this.ctx);
@@ -563,6 +926,12 @@ class Game {
         const ammoElement = document.getElementById('ammo');
         if (ammoElement) {
             ammoElement.textContent = `${this.ammo}/${this.maxAmmo}`;
+        }
+
+        // Update lives
+        const livesElement = document.getElementById('lives');
+        if (livesElement) {
+            livesElement.textContent = this.currentLives;
         }
     }
 
@@ -636,7 +1005,7 @@ class Game {
         this.gameState = 'playing';
         this.timeRemaining = this.gameTime;
         this.currentLevel = 1;
-        this.player = new Player(100, 400);
+        this.player = new Player(100, 400, this);
         this.particles = [];
 
         // Recreate level 1
@@ -660,7 +1029,8 @@ class Game {
 
 // Player class
 class Player {
-    constructor(x, y) {
+    constructor(x, y, gameRef) {
+        this.game = gameRef;
         this.x = x;
         this.y = y;
         this.width = 24;
@@ -731,12 +1101,10 @@ class Player {
         // Boundary checks
         if (this.x < 0) this.x = 0;
         if (this.x + this.width > game.width) this.x = game.width - this.width;
-        if (this.y > game.height) {
+        if (this.y > this.game.height) {
+            // Player fell off screen - instant death
+            this.health = 1;
             this.takeDamage();
-            this.x = 100;
-            this.y = 400;
-            this.vx = 0;
-            this.vy = 0;
         }
     }
 
@@ -756,6 +1124,9 @@ class Player {
             this.vy = -this.jumpPower;
             this.canJump = false;
             this.grounded = false;
+            if (this.game) {
+                this.game.playSound('jump');
+            }
         }
 
         // Crouching
@@ -792,8 +1163,9 @@ class Player {
         this.invincibleTime = 1.5;
 
         if (this.health <= 0) {
-            // Game over
-            game.gameOver('You were defeated!');
+            if (this.game) {
+                this.game.handlePlayerDeath();
+            }
         }
     }
 
@@ -1016,74 +1388,65 @@ class PressurePlate {
         this.height = 10;
         this.channel = channel;
         this.isPressed = false;
-        this.wasPressed = false;
         this.timer = 0;
-        this.delayTime = 10; // 10 seconds delay before gate closes
+        this.openTime = 8; // Keep gate open for 8 seconds after stepping off
     }
 
     activate() {
         this.isPressed = true;
-        this.wasPressed = true;
-        this.timer = this.delayTime; // Reset timer when activated
+        this.timer = this.openTime; // Reset timer when stepped on
     }
 
     deactivate() {
         this.isPressed = false;
-        // Don't immediately deactivate, let timer count down
+        // Timer will continue counting down
     }
 
     update(deltaTime) {
         // Count down timer when not pressed
         if (!this.isPressed && this.timer > 0) {
             this.timer -= deltaTime;
-            if (this.timer <= 0) {
-                this.wasPressed = false; // Finally deactivate
-            }
         }
     }
 
     // Check if plate should keep gates open
     shouldKeepOpen() {
-        return this.isPressed || this.wasPressed;
+        return this.isPressed || this.timer > 0;
     }
 
     reset() {
         this.isPressed = false;
-        this.wasPressed = false;
         this.timer = 0;
     }
 
     render(ctx) {
-        // Color based on state
-        let plateColor = '#666'; // default
+        // Simple platform appearance - no more checkbox look
+        let plateColor;
         if (this.isPressed) {
-            plateColor = '#4ECDC4'; // bright when pressed
-        } else if (this.wasPressed && this.timer > 0) {
-            // Fade from bright to dim as timer counts down
-            const fade = this.timer / this.delayTime;
-            plateColor = fade > 0.5 ? '#4ECDC4' : '#FFD93D'; // yellow warning
+            // Bright color when standing on it
+            if (this.channel === 'red') plateColor = '#FF6B6B';
+            else if (this.channel === 'blue') plateColor = '#4169E1';
+            else if (this.channel === 'green') plateColor = '#32CD32';
+            else plateColor = '#4ECDC4';
+        } else if (this.timer > 0) {
+            // Dimmer color when gate is still open but not standing on it
+            if (this.channel === 'red') plateColor = '#8B3A3A';
+            else if (this.channel === 'blue') plateColor = '#1C4F8B';
+            else if (this.channel === 'green') plateColor = '#228B22';
+            else plateColor = '#2C8B8B';
+        } else {
+            // Gray when inactive
+            plateColor = '#666';
         }
 
+        // Draw the pressure plate as a simple colored platform
         ctx.fillStyle = plateColor;
         ctx.fillRect(this.x, this.y, this.width, this.height);
 
-        // Draw channel indicator
-        let channelColor = '#4ECDC4';
-        if (this.channel === 'red') channelColor = '#FF6B6B';
-        else if (this.channel === 'blue') channelColor = '#4169E1';
-        else if (this.channel === 'green') channelColor = '#32CD32';
-
-        ctx.fillStyle = channelColor;
-        ctx.fillRect(this.x + 5, this.y - 5, this.width - 10, 3);
-
-        // Show countdown timer when gate is about to close
-        if (!this.isPressed && this.timer > 0 && this.timer < 5) {
-            ctx.fillStyle = 'white';
-            ctx.font = '12px monospace';
-            ctx.textAlign = 'center';
-            ctx.fillText(Math.ceil(this.timer).toString(), this.x + this.width/2, this.y - 8);
-            ctx.textAlign = 'left';
-        }
+        // Add a slight border to make it visible
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(this.x, this.y, this.width, this.height);
     }
 }
 
@@ -1226,9 +1589,11 @@ class Checkpoint {
         ctx.textAlign = 'center';
 
         if (this.floor === 'next') {
-            ctx.fillText('→2', this.x + this.width/2, this.y + this.height/2 + 4);
+            ctx.fillText('→', this.x + this.width/2, this.y + this.height/2 + 4);
         } else if (this.floor === 'win') {
             ctx.fillText('WIN', this.x + this.width/2, this.y + this.height/2 + 4);
+        } else if (typeof this.floor === 'string' && this.floor.startsWith('mid')) {
+            ctx.fillText('✓', this.x + this.width/2, this.y + this.height/2 + 6);
         } else {
             ctx.fillText(this.floor.toString(), this.x + this.width/2, this.y + this.height/2 + 6);
         }
@@ -1326,20 +1691,34 @@ class BasicGuard {
         } else if (this.damageFlash > 0) {
             ctx.fillStyle = '#FF6B6B';
         } else {
-            ctx.fillStyle = '#8B0000';
+            ctx.fillStyle = '#228B22'; // Orc green skin
         }
 
-        // Draw guard body
-        ctx.fillRect(this.x, this.y, this.width, this.height);
+        // Draw orc body
+        ctx.fillRect(this.x + 3, this.y + 8, this.width - 6, this.height - 8);
 
-        // Draw armor details
-        ctx.fillStyle = '#C0C0C0';
-        ctx.fillRect(this.x + 3, this.y + 5, this.width - 6, 3);
-        ctx.fillRect(this.x + 5, this.y + 12, this.width - 10, 3);
+        // Draw orc head (larger and green)
+        ctx.fillStyle = this.damageFlash > 0 ? '#FF6B6B' : '#2E8B57';
+        ctx.fillRect(this.x + 2, this.y, this.width - 4, 12);
 
-        // Draw helmet
-        ctx.fillStyle = '#666';
-        ctx.fillRect(this.x + 2, this.y - 5, this.width - 4, 8);
+        // Draw orc tusks
+        ctx.fillStyle = '#FFF8DC';
+        ctx.fillRect(this.x + 5, this.y + 8, 2, 4);
+        ctx.fillRect(this.x + this.width - 7, this.y + 8, 2, 4);
+
+        // Draw angry red eyes
+        ctx.fillStyle = '#FF0000';
+        ctx.fillRect(this.x + 6, this.y + 3, 2, 2);
+        ctx.fillRect(this.x + this.width - 8, this.y + 3, 2, 2);
+
+        // Draw crude armor
+        ctx.fillStyle = '#8B4513';
+        ctx.fillRect(this.x + 4, this.y + 10, this.width - 8, 8);
+
+        // Draw weapon (club)
+        ctx.fillStyle = '#654321';
+        ctx.fillRect(this.x + this.width - 2, this.y + 5, 4, 15);
+        ctx.fillRect(this.x + this.width - 1, this.y + 2, 2, 6);
 
         ctx.globalAlpha = 1;
     }
@@ -1419,24 +1798,40 @@ class PatrolEnemy {
         } else if (this.damageFlash > 0) {
             ctx.fillStyle = '#FF6B6B';
         } else {
-            ctx.fillStyle = '#4B0082';
+            ctx.fillStyle = '#556B2F'; // Dark olive orc skin
         }
 
-        // Draw patrol enemy body
-        ctx.fillRect(this.x, this.y, this.width, this.height);
+        // Draw orc patrol body
+        ctx.fillRect(this.x + 2, this.y + 6, this.width - 4, this.height - 6);
 
-        // Draw movement lines to show direction
-        ctx.fillStyle = '#FFD700';
+        // Draw orc head
+        ctx.fillStyle = this.damageFlash > 0 ? '#FF6B6B' : '#6B8E23';
+        ctx.fillRect(this.x + 1, this.y, this.width - 2, 10);
+
+        // Draw orc ears (pointy)
+        ctx.fillStyle = this.damageFlash > 0 ? '#FF6B6B' : '#6B8E23';
+        ctx.fillRect(this.x - 1, this.y + 2, 3, 4);
+        ctx.fillRect(this.x + this.width - 2, this.y + 2, 3, 4);
+
+        // Draw movement indicator (weapon swing)
+        ctx.fillStyle = '#8B4513';
         if (this.direction > 0) {
-            ctx.fillRect(this.x + this.width - 3, this.y + 5, 2, 18);
+            ctx.fillRect(this.x + this.width - 2, this.y + 3, 5, 2);
+            ctx.fillRect(this.x + this.width - 1, this.y + 8, 3, 12);
         } else {
-            ctx.fillRect(this.x + 1, this.y + 5, 2, 18);
+            ctx.fillRect(this.x - 3, this.y + 3, 5, 2);
+            ctx.fillRect(this.x - 2, this.y + 8, 3, 12);
         }
 
-        // Draw simple face
-        ctx.fillStyle = 'white';
-        ctx.fillRect(this.x + 5, this.y + 8, 2, 2);
-        ctx.fillRect(this.x + 15, this.y + 8, 2, 2);
+        // Draw glowing red eyes
+        ctx.fillStyle = '#FF4500';
+        ctx.fillRect(this.x + 4, this.y + 3, 2, 2);
+        ctx.fillRect(this.x + this.width - 6, this.y + 3, 2, 2);
+
+        // Draw armor straps
+        ctx.fillStyle = '#654321';
+        ctx.fillRect(this.x + 3, this.y + 12, this.width - 6, 2);
+        ctx.fillRect(this.x + 3, this.y + 18, this.width - 6, 2);
 
         ctx.globalAlpha = 1;
     }
@@ -1531,27 +1926,43 @@ class ChaseEnemy {
         } else if (this.damageFlash > 0) {
             ctx.fillStyle = '#FF6B6B';
         } else {
-            ctx.fillStyle = this.isChasing ? '#DC143C' : '#800080';
+            ctx.fillStyle = this.isChasing ? '#8B0000' : '#2F4F4F'; // Berserker orc colors
         }
 
-        // Draw chase enemy body
-        ctx.fillRect(this.x, this.y, this.width, this.height);
+        // Draw berserker orc body (larger and more muscular)
+        ctx.fillRect(this.x + 1, this.y + 8, this.width - 2, this.height - 8);
 
-        // Draw detection indicator
+        // Draw orc head (bigger for berserker)
+        ctx.fillStyle = this.damageFlash > 0 ? '#FF6B6B' : (this.isChasing ? '#8B0000' : '#696969');
+        ctx.fillRect(this.x, this.y, this.width, 12);
+
+        // Draw rage indicator (steam from ears when chasing)
         if (this.isChasing) {
-            ctx.fillStyle = '#FF4500';
-            ctx.fillRect(this.x + 2, this.y - 8, this.width - 4, 5);
+            ctx.fillStyle = '#FFFFFF';
+            const steam = Math.sin(Date.now() / 100) * 2;
+            ctx.fillRect(this.x - 3, this.y - 5 + steam, 2, 8);
+            ctx.fillRect(this.x + this.width + 1, this.y - 5 + steam, 2, 8);
         }
 
-        // Draw aggressive eyes
-        ctx.fillStyle = this.isChasing ? '#FF0000' : 'white';
-        ctx.fillRect(this.x + 6, this.y + 8, 3, 3);
-        ctx.fillRect(this.x + 15, this.y + 8, 3, 3);
+        // Draw massive tusks (bigger than regular orcs)
+        ctx.fillStyle = '#FFF8DC';
+        ctx.fillRect(this.x + 4, this.y + 9, 3, 6);
+        ctx.fillRect(this.x + this.width - 7, this.y + 9, 3, 6);
 
-        // Draw claws
-        ctx.fillStyle = '#FFD700';
-        ctx.fillRect(this.x - 2, this.y + 20, 4, 8);
-        ctx.fillRect(this.x + this.width - 2, this.y + 20, 4, 8);
+        // Draw berserker eyes (glowing when chasing)
+        ctx.fillStyle = this.isChasing ? '#FF0000' : '#FF4500';
+        ctx.fillRect(this.x + 5, this.y + 4, 3, 3);
+        ctx.fillRect(this.x + this.width - 8, this.y + 4, 3, 3);
+
+        // Draw war paint
+        ctx.fillStyle = '#8B0000';
+        ctx.fillRect(this.x + 2, this.y + 2, this.width - 4, 1);
+        ctx.fillRect(this.x + this.width/2 - 1, this.y + 1, 2, 4);
+
+        // Draw massive claws/weapons
+        ctx.fillStyle = '#B8860B';
+        ctx.fillRect(this.x - 3, this.y + 18, 6, 10);
+        ctx.fillRect(this.x + this.width - 3, this.y + 18, 6, 10);
 
         ctx.globalAlpha = 1;
     }
