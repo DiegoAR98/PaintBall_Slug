@@ -34,6 +34,89 @@ const SHOP_ITEMS = [
     { id: 'checkpointHeal', name: 'Checkpoint Heal',    desc: '+1 HP at checkpoints',      price: 1200 }
 ];
 
+// === GAME CONSTANTS ===
+const CONSTANTS = {
+    GRAVITY: 1.2,
+    GRAVITY_ACCEL: 720, // GRAVITY * 600
+    FRICTION: 0.99,
+    GAME_TIME: 300,
+    LIVES_PER_LEVEL: 3,
+    MAX_LEVEL: 5,
+    PLAYER: {
+        WIDTH: 24, HEIGHT: 32, SPEED: 200, JUMP_POWER: 400,
+        MAX_HEALTH: 5, INVINCIBLE_TIME: 1.5,
+        ROLL_SPEED: 300, ROLL_TIME: 0.5, ROLL_HEIGHT: 15,
+        CROUCH_HEIGHT: 22, MAX_SPEED: 300, ACCEL_MULT: 4
+    },
+    COMBAT: {
+        PROJECTILE_SPEED: 600, SHOOT_COOLDOWN: 0.3,
+        BASE_AMMO: 20, DOUBLE_AMMO: 40,
+        KILL_POINTS: 50, HIT_POINTS: 10
+    },
+    COMBO: {
+        WINDOW: 3, TIER1_KILLS: 3, TIER1_MULT: 2,
+        TIER2_KILLS: 5, TIER2_MULT: 3
+    },
+    ENEMY: {
+        BASIC_HEALTH: 2, PATROL_HEALTH: 3, CHASE_HEALTH: 4,
+        PATROL_SPEED: 50, CHASE_SPEED: 80,
+        DEATH_DURATION: 0.5, DAMAGE_FLASH: 0.3, AGGRO_TIME: 2
+    }
+};
+
+// === COLLISION UTILITY ===
+function rectCollides(a, b) {
+    return a.x < b.x + b.width && a.x + a.width > b.x &&
+           a.y < b.y + b.height && a.y + a.height > b.y;
+}
+
+// === SPATIAL GRID (broad-phase collision optimization) ===
+class SpatialGrid {
+    constructor(cellSize, width, height) {
+        this.cellSize = cellSize;
+        this.cols = Math.ceil(width / cellSize);
+        this.rows = Math.ceil(height / cellSize);
+        this.cells = new Map();
+    }
+
+    clear() {
+        this.cells.clear();
+    }
+
+    _key(col, row) {
+        return col * 10000 + row;
+    }
+
+    insert(entity) {
+        const minCol = Math.max(0, Math.floor(entity.x / this.cellSize));
+        const maxCol = Math.min(this.cols - 1, Math.floor((entity.x + entity.width) / this.cellSize));
+        const minRow = Math.max(0, Math.floor(entity.y / this.cellSize));
+        const maxRow = Math.min(this.rows - 1, Math.floor((entity.y + entity.height) / this.cellSize));
+        for (let c = minCol; c <= maxCol; c++) {
+            for (let r = minRow; r <= maxRow; r++) {
+                const key = this._key(c, r);
+                if (!this.cells.has(key)) this.cells.set(key, []);
+                this.cells.get(key).push(entity);
+            }
+        }
+    }
+
+    getNearby(entity) {
+        const result = new Set();
+        const minCol = Math.max(0, Math.floor(entity.x / this.cellSize));
+        const maxCol = Math.min(this.cols - 1, Math.floor((entity.x + entity.width) / this.cellSize));
+        const minRow = Math.max(0, Math.floor(entity.y / this.cellSize));
+        const maxRow = Math.min(this.rows - 1, Math.floor((entity.y + entity.height) / this.cellSize));
+        for (let c = minCol; c <= maxCol; c++) {
+            for (let r = minRow; r <= maxRow; r++) {
+                const cell = this.cells.get(this._key(c, r));
+                if (cell) cell.forEach(e => { if (e !== entity) result.add(e); });
+            }
+        }
+        return result;
+    }
+}
+
 // === GAME CLASS ===
 class Game {
     constructor(difficulty = 'normal') {
@@ -55,19 +138,19 @@ class Game {
         this.keys = {};
         this.lastTime = 0;
 
-        // Game settings
-        this.gravity = 1.2;
-        this.friction = 0.99;
-        this.gameTime = 300;
+        // Game settings (from constants)
+        this.gravity = CONSTANTS.GRAVITY;
+        this.friction = CONSTANTS.FRICTION;
+        this.gameTime = CONSTANTS.GAME_TIME;
         this.timeRemaining = this.gameTime;
         this.levelStartTime = this.gameTime;
 
         // Level management
         this.currentLevel = 1;
-        this.maxLevel = 5;
+        this.maxLevel = CONSTANTS.MAX_LEVEL;
 
         // Life management
-        this.livesPerLevel = 3;
+        this.livesPerLevel = CONSTANTS.LIVES_PER_LEVEL;
         this.currentLives = this.livesPerLevel;
         this.lastCheckpointPosition = { x: 100, y: 400 };
         this.levelDamageTaken = false;
@@ -88,11 +171,14 @@ class Game {
         // Combat
         this.playerScore = 0;
         this.runScore = 0;
-        this.baseAmmo = 20;
-        this.maxAmmo = this.saveData.upgrades.doubleAmmo ? 40 : 20;
+        this.baseAmmo = CONSTANTS.COMBAT.BASE_AMMO;
+        this.maxAmmo = this.saveData.upgrades.doubleAmmo ? CONSTANTS.COMBAT.DOUBLE_AMMO : CONSTANTS.COMBAT.BASE_AMMO;
         this.ammo = Math.floor(this.maxAmmo * this.diffMult.ammoMult);
         this.shootCooldown = 0;
-        this.maxShootCooldown = 0.3;
+        this.maxShootCooldown = CONSTANTS.COMBAT.SHOOT_COOLDOWN;
+
+        // Spatial grid for collision optimization
+        this.spatialGrid = new SpatialGrid(100, this.width, this.height);
 
         // Combo system
         this.combo = { count: 0, timer: 0, multiplier: 1 };
@@ -153,9 +239,9 @@ class Game {
     // === COMBO SYSTEM ===
     registerKill(basePoints, x, y) {
         this.combo.count++;
-        this.combo.timer = 3;
-        if (this.combo.count >= 5) this.combo.multiplier = 3;
-        else if (this.combo.count >= 3) this.combo.multiplier = 2;
+        this.combo.timer = CONSTANTS.COMBO.WINDOW;
+        if (this.combo.count >= CONSTANTS.COMBO.TIER2_KILLS) this.combo.multiplier = CONSTANTS.COMBO.TIER2_MULT;
+        else if (this.combo.count >= CONSTANTS.COMBO.TIER1_KILLS) this.combo.multiplier = CONSTANTS.COMBO.TIER1_MULT;
         else this.combo.multiplier = 1;
 
         const points = Math.floor(basePoints * this.combo.multiplier * this.diffMult.scoreMult);
@@ -283,7 +369,7 @@ class Game {
         this.projectiles = [];
         this.damageNumbers = [];
 
-        this.maxAmmo = this.saveData.upgrades.doubleAmmo ? 40 : 20;
+        this.maxAmmo = this.saveData.upgrades.doubleAmmo ? CONSTANTS.COMBAT.DOUBLE_AMMO : CONSTANTS.COMBAT.BASE_AMMO;
         this.ammo = Math.floor(this.maxAmmo * this.diffMult.ammoMult);
         this.shootCooldown = 0;
 
@@ -515,7 +601,7 @@ class Game {
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist <= 0) return;
 
-        const speed = 600;
+        const speed = CONSTANTS.COMBAT.PROJECTILE_SPEED;
         this.projectiles.push(new Projectile(cx, cy, (dx / dist) * speed, (dy / dist) * speed));
         this.ammo--;
         this.shootCooldown = this.maxShootCooldown;
@@ -641,33 +727,42 @@ class Game {
     checkCollisions() {
         const player = this.player;
 
-        // Player vs platforms
-        this.platforms.forEach(platform => {
-            if (player.collidesWith(platform)) {
-                if (player.vy > 0 && player.y + player.height - 10 < platform.y) {
-                    player.y = platform.y - player.height;
+        // Populate spatial grid for broad-phase optimization
+        this.spatialGrid.clear();
+        this.platforms.forEach(p => this.spatialGrid.insert(p));
+        this.enemies.forEach(e => this.spatialGrid.insert(e));
+
+        // Player vs platforms (use spatial grid)
+        const nearbyPlatforms = this.spatialGrid.getNearby(player);
+        nearbyPlatforms.forEach(obj => {
+            if (!(obj instanceof Platform)) return;
+            if (rectCollides(player, obj)) {
+                if (player.vy > 0 && player.y + player.height - 10 < obj.y) {
+                    player.y = obj.y - player.height;
                     player.vy = 0;
                     player.grounded = true;
                     player.canJump = true;
-                } else if (player.vy < 0 && player.y > platform.y + platform.height - 10) {
-                    player.y = platform.y + platform.height;
+                } else if (player.vy < 0 && player.y > obj.y + obj.height - 10) {
+                    player.y = obj.y + obj.height;
                     player.vy = 0;
-                } else if (player.vx > 0 && player.x < platform.x) {
-                    player.x = platform.x - player.width;
+                } else if (player.vx > 0 && player.x < obj.x) {
+                    player.x = obj.x - player.width;
                     player.vx = 0;
-                } else if (player.vx < 0 && player.x + player.width > platform.x + platform.width) {
-                    player.x = platform.x + platform.width;
+                } else if (player.vx < 0 && player.x + player.width > obj.x + obj.width) {
+                    player.x = obj.x + obj.width;
                     player.vx = 0;
                 }
             }
         });
 
-        // Enemy vs platforms
+        // Enemy vs platforms (use spatial grid)
         this.enemies.forEach(enemy => {
-            this.platforms.forEach(platform => {
-                if (enemy.collidesWith(platform) && enemy.vy > 0 &&
-                    enemy.y + enemy.height - 10 < platform.y) {
-                    enemy.y = platform.y - enemy.height;
+            const nearby = this.spatialGrid.getNearby(enemy);
+            nearby.forEach(obj => {
+                if (!(obj instanceof Platform)) return;
+                if (rectCollides(enemy, obj) && enemy.vy > 0 &&
+                    enemy.y + enemy.height - 10 < obj.y) {
+                    enemy.y = obj.y - enemy.height;
                     enemy.vy = 0;
                     enemy.grounded = true;
                 }
@@ -676,7 +771,7 @@ class Game {
 
         // Traps
         this.traps.forEach(trap => {
-            if (trap.isActive && player.collidesWith(trap)) {
+            if (trap.isActive && trap.collidesWithPlayer(player)) {
                 player.takeDamage();
                 this.playSound('hit');
                 this.triggerScreenShake(6, 0.2);
@@ -686,7 +781,7 @@ class Game {
 
         // Pressure plates
         this.plates.forEach(plate => {
-            if (player.collidesWith(plate)) {
+            if (rectCollides(player, plate)) {
                 if (!plate.isPressed) {
                     this.playSound('plate_activate');
                     this.showTutorial('plates', 'Pressure plates open matching colored gates!');
@@ -705,7 +800,7 @@ class Game {
 
         // Gates
         this.gates.forEach(gate => {
-            if (!gate.isOpen && player.collidesWith(gate)) {
+            if (!gate.isOpen && gate.collidesWithPlayer(player)) {
                 if (player.x < gate.x) player.x = gate.x - player.width;
                 else player.x = gate.x + gate.width;
                 player.vx = 0;
@@ -714,7 +809,7 @@ class Game {
 
         // Potions
         this.potions = this.potions.filter(potion => {
-            if (potion.active && player.collidesWith(potion)) {
+            if (potion.active && rectCollides(player, potion)) {
                 potion.collect();
                 player.heal();
                 this.addParticles(potion.x, potion.y, '#4ECDC4', 8);
@@ -725,34 +820,40 @@ class Game {
             return true;
         });
 
-        // Player-Enemy
-        this.enemies.forEach(enemy => {
-            if (player.collidesWith(enemy) && !enemy.isDying) {
+        // Player-Enemy (use spatial grid)
+        const nearbyEnemies = this.spatialGrid.getNearby(player);
+        nearbyEnemies.forEach(obj => {
+            if (!(obj instanceof BasicGuard || obj instanceof PatrolEnemy || obj instanceof ChaseEnemy)) return;
+            if (rectCollides(player, obj) && !obj.isDying) {
                 player.takeDamage();
                 this.playSound('hit');
                 this.triggerScreenShake(5, 0.15);
                 this.levelDamageTaken = true;
-                const push = player.x < enemy.x ? -1 : 1;
+                const push = player.x < obj.x ? -1 : 1;
                 player.vx += push * 200;
             }
         });
 
-        // Projectiles
+        // Projectiles vs platforms & enemies
         this.projectiles.forEach(projectile => {
+            if (!projectile.active) return;
+            // Check platforms
             this.platforms.forEach(platform => {
-                if (projectile.collidesWith(platform)) {
+                if (rectCollides(projectile, platform)) {
                     projectile.active = false;
                     this.addParticles(projectile.x, projectile.y, '#FFD93D', 2);
                 }
             });
+            if (!projectile.active) return;
+            // Check enemies
             this.enemies.forEach(enemy => {
-                if (projectile.collidesWith(enemy) && !enemy.isDying) {
+                if (rectCollides(projectile, enemy) && !enemy.isDying) {
                     projectile.active = false;
                     enemy.takeDamage(1);
                     this.triggerHitStop(3);
                     this.triggerScreenShake(3, 0.1);
 
-                    const hitPoints = Math.floor(10 * this.diffMult.scoreMult);
+                    const hitPoints = Math.floor(CONSTANTS.COMBAT.HIT_POINTS * this.diffMult.scoreMult);
                     this.playerScore += hitPoints;
                     this.runScore += hitPoints;
                     this.showDamageNumber(enemy.x + enemy.width / 2, enemy.y, `-${1}`, '#FF6B6B');
@@ -760,7 +861,7 @@ class Game {
 
                     if (enemy.health <= 0) {
                         enemy.isDying = true;
-                        this.registerKill(50, enemy.x + enemy.width / 2, enemy.y);
+                        this.registerKill(CONSTANTS.COMBAT.KILL_POINTS, enemy.x + enemy.width / 2, enemy.y);
                         this.addParticles(enemy.x + enemy.width / 2, enemy.y + enemy.height / 2, '#FFD700', 10);
                         this.playSound('enemy_death');
                     }
@@ -770,7 +871,7 @@ class Game {
 
         // Checkpoints
         this.checkpoints.forEach(checkpoint => {
-            if (player.collidesWith(checkpoint)) {
+            if (rectCollides(player, checkpoint)) {
                 if (checkpoint.floor === 'next' && !checkpoint.activated) {
                     this.playSound('level_complete');
                     this.advanceLevel();
@@ -1052,11 +1153,11 @@ class Player {
     constructor(x, y, gameRef) {
         this.game = gameRef;
         this.x = x; this.y = y;
-        this.width = 24; this.height = 32;
+        this.width = CONSTANTS.PLAYER.WIDTH; this.height = CONSTANTS.PLAYER.HEIGHT;
         this.vx = 0; this.vy = 0;
-        this.speed = 200; this.jumpPower = 400;
+        this.speed = CONSTANTS.PLAYER.SPEED; this.jumpPower = CONSTANTS.PLAYER.JUMP_POWER;
         this.grounded = false; this.canJump = true;
-        this.health = 5; this.maxHealth = 5;
+        this.health = CONSTANTS.PLAYER.MAX_HEALTH; this.maxHealth = CONSTANTS.PLAYER.MAX_HEALTH;
         this.invincible = false; this.invincibleTime = 0;
         this.crouching = false; this.rolling = false; this.rollTime = 0;
         this.lastDirection = 1;
@@ -1065,10 +1166,10 @@ class Player {
 
     update(deltaTime, game) {
         this.handleInput(game.keys, deltaTime);
-        this.vy += game.gravity * 600 * deltaTime;
+        this.vy += CONSTANTS.GRAVITY_ACCEL * deltaTime;
         this.x += this.vx * deltaTime;
         this.y += this.vy * deltaTime;
-        if (this.grounded) this.vx *= game.friction;
+        if (this.grounded) this.vx *= CONSTANTS.FRICTION;
 
         if (this.invincible) {
             this.invincibleTime -= deltaTime;
@@ -1076,7 +1177,7 @@ class Player {
         }
         if (this.rolling) {
             this.rollTime -= deltaTime;
-            if (this.rollTime <= 0) { this.rolling = false; this.height = 32; }
+            if (this.rollTime <= 0) { this.rolling = false; this.height = CONSTANTS.PLAYER.HEIGHT; }
         }
 
         this.animationTime += deltaTime;
@@ -1095,8 +1196,8 @@ class Player {
     }
 
     handleInput(keys, deltaTime) {
-        if (keys['a'] || keys['arrowleft']) { this.vx -= this.speed * 4 * deltaTime; this.lastDirection = -1; }
-        if (keys['d'] || keys['arrowright']) { this.vx += this.speed * 4 * deltaTime; this.lastDirection = 1; }
+        if (keys['a'] || keys['arrowleft']) { this.vx -= this.speed * CONSTANTS.PLAYER.ACCEL_MULT * deltaTime; this.lastDirection = -1; }
+        if (keys['d'] || keys['arrowright']) { this.vx += this.speed * CONSTANTS.PLAYER.ACCEL_MULT * deltaTime; this.lastDirection = 1; }
 
         if ((keys['w'] || keys['arrowup']) && this.canJump && this.grounded) {
             this.vy = -this.jumpPower;
@@ -1105,22 +1206,22 @@ class Player {
             if (this.game) this.game.playSound('jump');
         }
 
-        if (keys['s'] || keys['arrowdown']) { this.crouching = true; this.height = 22; }
-        else { this.crouching = false; if (!this.rolling) this.height = 32; }
+        if (keys['s'] || keys['arrowdown']) { this.crouching = true; this.height = CONSTANTS.PLAYER.CROUCH_HEIGHT; }
+        else { this.crouching = false; if (!this.rolling) this.height = CONSTANTS.PLAYER.HEIGHT; }
 
         if (keys[' '] && this.grounded && !this.rolling) {
-            this.rolling = true; this.rollTime = 0.5; this.height = 15;
-            this.vx = this.vx > 0 ? 300 : -300;
+            this.rolling = true; this.rollTime = CONSTANTS.PLAYER.ROLL_TIME; this.height = CONSTANTS.PLAYER.ROLL_HEIGHT;
+            this.vx = this.vx > 0 ? CONSTANTS.PLAYER.ROLL_SPEED : -CONSTANTS.PLAYER.ROLL_SPEED;
         }
 
-        this.vx = Math.max(-300, Math.min(300, this.vx));
+        this.vx = Math.max(-CONSTANTS.PLAYER.MAX_SPEED, Math.min(CONSTANTS.PLAYER.MAX_SPEED, this.vx));
     }
 
     takeDamage() {
         if (this.invincible) return;
         this.health--;
         this.invincible = true;
-        this.invincibleTime = 1.5;
+        this.invincibleTime = CONSTANTS.PLAYER.INVINCIBLE_TIME;
 
         if (this.game) {
             this.game.triggerScreenShake(6, 0.2);
@@ -1133,11 +1234,6 @@ class Player {
     }
 
     heal() { this.health = Math.min(this.maxHealth, this.health + 1); }
-
-    collidesWith(other) {
-        return this.x < other.x + other.width && this.x + this.width > other.x &&
-               this.y < other.y + other.height && this.y + this.height > other.y;
-    }
 
     render(ctx, frameTime) {
         if (this.invincible && Math.floor((frameTime || 0) / 100) % 2) ctx.globalAlpha = 0.5;
@@ -1223,9 +1319,8 @@ class SpikeTrap {
             }
         }
     }
-    collidesWith(player) {
-        return this.x < player.x + player.width && this.x + this.width > player.x &&
-               this.y < player.y + player.height && this.y + this.height > player.y;
+    collidesWithPlayer(player) {
+        return rectCollides(this, player);
     }
 }
 
@@ -1253,7 +1348,8 @@ class SlicerTrap {
             ctx.fillRect(this.x - 10, this.baseBladeY - 10, this.width + 20, 10);
         }
     }
-    collidesWith(player) {
+    collidesWithPlayer(player) {
+        // Custom: uses blade position instead of trap bounds
         return this.isActive && player.x < this.x + this.width && player.x + player.width > this.x &&
                player.y < this.bladeY + 20 && player.y + player.height > this.bladeY;
     }
@@ -1303,7 +1399,8 @@ class Gate {
         for (let i = 0; i < this.currentHeight; i += 10)
             ctx.fillRect(this.x + 2, this.y + this.baseHeight - this.currentHeight + i, this.width - 4, 2);
     }
-    collidesWith(player) {
+    collidesWithPlayer(player) {
+        // Custom: uses animated currentHeight instead of static bounds
         return this.currentHeight > 10 && player.x < this.x + this.width && player.x + player.width > this.x &&
                player.y < this.y + this.baseHeight && player.y + player.height > this.y + this.baseHeight - this.currentHeight;
     }
@@ -1386,23 +1483,20 @@ class Particle {
 class BasicGuard {
     constructor(x, y) {
         this.x = x; this.y = y; this.width = 25; this.height = 30;
-        this.health = 2; this.maxHealth = 2; this.vx = 0; this.vy = 0;
+        this.health = CONSTANTS.ENEMY.BASIC_HEALTH; this.maxHealth = CONSTANTS.ENEMY.BASIC_HEALTH;
+        this.vx = 0; this.vy = 0;
         this.grounded = false; this.isDying = false; this.deathTimer = 0; this.damageFlash = 0;
     }
     update(deltaTime, game) {
-        if (this.isDying) { this.deathTimer += deltaTime; if (this.deathTimer > 0.5) this.health = 0; return; }
-        this.vy += game.gravity * 600 * deltaTime;
+        if (this.isDying) { this.deathTimer += deltaTime; if (this.deathTimer > CONSTANTS.ENEMY.DEATH_DURATION) this.health = 0; return; }
+        this.vy += CONSTANTS.GRAVITY_ACCEL * deltaTime;
         this.y += this.vy * deltaTime;
         if (this.damageFlash > 0) this.damageFlash -= deltaTime;
         this.grounded = false;
     }
     takeDamage(amount) {
-        this.health -= amount; this.damageFlash = 0.3;
+        this.health -= amount; this.damageFlash = CONSTANTS.ENEMY.DAMAGE_FLASH;
         if (this.health <= 0 && !this.isDying) { this.isDying = true; this.deathTimer = 0; }
-    }
-    collidesWith(other) {
-        return this.x < other.x + other.width && this.x + this.width > other.x &&
-               this.y < other.y + other.height && this.y + this.height > other.y;
     }
     render(ctx) {
         if (this.isDying) ctx.globalAlpha = 0.3;
@@ -1428,13 +1522,14 @@ class BasicGuard {
 class PatrolEnemy {
     constructor(x, y, leftBound, rightBound) {
         this.x = x; this.y = y; this.width = 22; this.height = 28;
-        this.health = 3; this.maxHealth = 3; this.vx = 50; this.vy = 0;
+        this.health = CONSTANTS.ENEMY.PATROL_HEALTH; this.maxHealth = CONSTANTS.ENEMY.PATROL_HEALTH;
+        this.vx = CONSTANTS.ENEMY.PATROL_SPEED; this.vy = 0;
         this.grounded = false; this.leftBound = leftBound; this.rightBound = rightBound;
         this.direction = 1; this.isDying = false; this.deathTimer = 0; this.damageFlash = 0;
     }
     update(deltaTime, game) {
-        if (this.isDying) { this.deathTimer += deltaTime; if (this.deathTimer > 0.5) this.health = 0; return; }
-        this.vy += game.gravity * 600 * deltaTime;
+        if (this.isDying) { this.deathTimer += deltaTime; if (this.deathTimer > CONSTANTS.ENEMY.DEATH_DURATION) this.health = 0; return; }
+        this.vy += CONSTANTS.GRAVITY_ACCEL * deltaTime;
         if (this.grounded) {
             this.x += this.vx * this.direction * deltaTime;
             if (this.x <= this.leftBound || this.x + this.width >= this.rightBound) this.direction *= -1;
@@ -1444,12 +1539,8 @@ class PatrolEnemy {
         this.grounded = false;
     }
     takeDamage(amount) {
-        this.health -= amount; this.damageFlash = 0.3;
+        this.health -= amount; this.damageFlash = CONSTANTS.ENEMY.DAMAGE_FLASH;
         if (this.health <= 0 && !this.isDying) { this.isDying = true; this.deathTimer = 0; }
-    }
-    collidesWith(other) {
-        return this.x < other.x + other.width && this.x + this.width > other.x &&
-               this.y < other.y + other.height && this.y + this.height > other.y;
     }
     render(ctx) {
         if (this.isDying) ctx.globalAlpha = 0.3;
@@ -1480,19 +1571,20 @@ class PatrolEnemy {
 class ChaseEnemy {
     constructor(x, y, detectionRange) {
         this.x = x; this.y = y; this.width = 24; this.height = 32;
-        this.health = 4; this.maxHealth = 4; this.vx = 0; this.vy = 0;
-        this.speed = 80; this.grounded = false;
+        this.health = CONSTANTS.ENEMY.CHASE_HEALTH; this.maxHealth = CONSTANTS.ENEMY.CHASE_HEALTH;
+        this.vx = 0; this.vy = 0;
+        this.speed = CONSTANTS.ENEMY.CHASE_SPEED; this.grounded = false;
         this.detectionRange = detectionRange || 100;
         this.isChasing = false; this.isDying = false;
         this.deathTimer = 0; this.damageFlash = 0; this.aggroTimer = 0;
     }
     update(deltaTime, game) {
-        if (this.isDying) { this.deathTimer += deltaTime; if (this.deathTimer > 0.5) this.health = 0; return; }
-        this.vy += game.gravity * 600 * deltaTime;
+        if (this.isDying) { this.deathTimer += deltaTime; if (this.deathTimer > CONSTANTS.ENEMY.DEATH_DURATION) this.health = 0; return; }
+        this.vy += CONSTANTS.GRAVITY_ACCEL * deltaTime;
         const pcx = game.player.x + game.player.width / 2;
         const ecx = this.x + this.width / 2;
         const dist = Math.abs(pcx - ecx);
-        if (dist < this.detectionRange) { this.isChasing = true; this.aggroTimer = 2; }
+        if (dist < this.detectionRange) { this.isChasing = true; this.aggroTimer = CONSTANTS.ENEMY.AGGRO_TIME; }
         else if (this.aggroTimer > 0) { this.aggroTimer -= deltaTime; if (this.aggroTimer <= 0) this.isChasing = false; }
         if (this.isChasing && this.grounded) {
             const dir = pcx > ecx ? 1 : -1;
@@ -1504,13 +1596,9 @@ class ChaseEnemy {
         this.grounded = false;
     }
     takeDamage(amount) {
-        this.health -= amount; this.damageFlash = 0.3;
-        this.isChasing = true; this.aggroTimer = 3;
+        this.health -= amount; this.damageFlash = CONSTANTS.ENEMY.DAMAGE_FLASH;
+        this.isChasing = true; this.aggroTimer = CONSTANTS.ENEMY.AGGRO_TIME + 1;
         if (this.health <= 0 && !this.isDying) { this.isDying = true; this.deathTimer = 0; }
-    }
-    collidesWith(other) {
-        return this.x < other.x + other.width && this.x + this.width > other.x &&
-               this.y < other.y + other.height && this.y + this.height > other.y;
     }
     render(ctx, frameTime) {
         if (this.isDying) ctx.globalAlpha = 0.3;
@@ -1558,10 +1646,6 @@ class Projectile {
         this.lifetime -= deltaTime;
         if (this.lifetime <= 0 || this.x < 0 || this.x > game.width || this.y < 0 || this.y > game.height)
             this.active = false;
-    }
-    collidesWith(other) {
-        return this.x < other.x + other.width && this.x + this.width > other.x &&
-               this.y < other.y + other.height && this.y + this.height > other.y;
     }
     render(ctx) {
         if (!this.active) return;
